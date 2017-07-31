@@ -1,0 +1,37 @@
+1.0 - July 1, 2007
+* Initial release
+
+1.1 - Aug 11, 2009
+* Added new GO annotation files.
+
+1.2 - Sep 8, 2009
+* CIS Analysis and custom motif table making.
+
+1.3 - May 18, 2010
+* Added support for soybean and custom plants.
+* Several UI improvements.
+
+1.4 - Aug 4, 2010
+* Updated motif, binding site, and transcription factor family files for arabidopsis.
+
+1.41 - Aug 26, 2010
+* Updated binding site and transcription factor family files for arabidopsis.
+
+1.42 - Oct 21, 2010
+* Updated binding site and motif files for arabidopsis.
+
+1.42a - Nov 15, 2010
+* Fixed bug relating to binding sites with multiple associated transcription factors.
+
+2.0 - August 23, 2016
+* Changed to Seq Enrich:
+	-updated contact info
+	-changed interface layout (added buttons for different menu options, reorganized and resized window and window components)
+	-updated database files for arabidopsis
+	-added a Brassica napus option with corresponding files
+	-removed soybean option
+	-removed ATH1 whole chip options (commented out but wtill present in the source code)
+	-removed analysis selection checkboxes (go, tff, binding sites, pathways, etc.) Now all analyses are run by default
+	-modified subnode to search through all the TFs instead of just the TFs associated with the enriched GOs
+	-added compatibility with .csv files (previously just .txt files)
+	-renamed "singletons" output directory to "output"

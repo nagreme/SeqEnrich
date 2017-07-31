@@ -1,0 +1,7 @@
+Manifest-Version: 1.0
+Archiver-Version: Plexus Archiver
+Created-By: Apache Maven
+Built-By: Corey
+Build-Jdk: 1.6.0_20
+Main-Class: com.bc.chipenrich.ui.ChipEnrich
+

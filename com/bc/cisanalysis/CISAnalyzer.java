@@ -1,0 +1,332 @@
+package com.bc.cisanalysis;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.BufferedReader;
+import java.io.PrintWriter;
+import java.io.FileWriter;
+import java.io.BufferedWriter;
+import java.io.InputStream;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.HashMap;
+
+import javax.swing.JLabel;
+
+import com.bc.chipenrich.service.*;
+import com.bc.chipenrich.ui.locator.MotifFileLocator;
+import com.bc.chipenrich.ui.locator.SingletonChipLocator;
+import com.bc.chipenrich.ui.locator.WholeChipLocator;
+import com.bc.core.BackgroundChip;
+import com.bc.core.AGI;
+import com.bc.core.GO;
+import com.bc.core.GeneDescriptorMap;
+import com.bc.file.AGIMotifReader;
+import com.bc.file.MotifReader;
+import com.bc.file.BindingSiteReader;
+import com.bc.file.TFFReader;
+import com.bc.promomer.service.PromomerTable;
+import com.bc.promomer.service.PromomerTableImpl;
+
+
+public class CISAnalyzer {
+  
+  private static final double P_VAL_THRESHOLD = 0.001;
+  
+  public PrintWriter writer;
+  private PrintWriter writer2;
+  private PrintWriter nodeWriter;
+  private PrintWriter subnodeWriter;
+  private String directory;
+  private File[] queryFiles;
+  private String patternDir;
+  private PromomerTable pt;
+  private JLabel status;
+  private BindingSiteReader binding_site_read;
+  private TFFReader families_read;
+  private HashMap<String, Double> GOCISEnrich;
+  
+  public CISAnalyzer(JLabel status, File[] queryFiles, String patternDir, String set) {
+    this.status = status;
+    this.queryFiles = queryFiles;
+    this.patternDir = patternDir;
+    directory = patternDir + "/" + set;
+    InputStream bcIn = null;
+    if (set.equals("output")) {
+      bcIn = SingletonChipLocator.getInstance().getInputStream(); //now default
+    }
+    /*
+    else if (set.equals("wholechip")) {
+      bcIn = WholeChipLocator.getInstance().getInputStream();
+    }*/
+    
+    BackgroundChip bc;
+    AGIMotifReader tableReader;
+    ChipEnrichService ces = new ChipEnrichServiceImpl();
+    try {
+      bc = ces.processBackgroundChip(bcIn);
+      tableReader = new AGIMotifReader();
+      binding_site_read = new BindingSiteReader();
+      families_read = new TFFReader();
+    } catch (Exception e) {
+      e.printStackTrace();
+      return;
+    }
+    pt = new PromomerTableImpl(bc, tableReader);
+  }
+  
+  public void makeTable() {
+    File[] motifs = new File[queryFiles.length];
+    for (int i = 0; i < queryFiles.length; i++) {
+      motifs[i] = new File(directory + "/motifs/" + queryFiles[i].getName() + ".processed.txt");
+      //if (!motifs[i].exists()) do some error handling
+    }
+    
+    String outDir = directory + "/analysis";
+    new File(outDir).mkdir();
+    writer = null;
+    GOCISEnrich = new HashMap<String, Double>();
+    for (int i = 0; i < motifs.length; i++) {
+      String filename = motifs[i].getName();
+      String patternName = filename.substring(0, filename.lastIndexOf(".processed.txt"));
+      
+      if (status != null) {
+        status.setText("Analysis: " + patternName);
+      }
+      
+      filename = patternName + ".analysis.network.txt"; //*****significant.txt
+      File outFile = new File(outDir + "/" + filename);
+      try {
+        writer = new PrintWriter(new BufferedWriter(
+                                                    new FileWriter(outFile)));
+      } catch (Exception e) {
+        e.printStackTrace();
+        return;
+      }
+      outFile = new File(outDir + "/" + patternName + ".subanalysis.network.txt"); //******sub.tf.txt
+      try {
+        writer2 = new PrintWriter(new BufferedWriter(
+                                                     new FileWriter(outFile)));
+      } catch (Exception e) {
+        e.printStackTrace();
+        return;
+      }
+      outFile = new File(outDir + "/" + patternName + ".analysis.attributes.txt"); //***node.txt
+      try {
+        nodeWriter = new PrintWriter(new BufferedWriter(
+                                                        new FileWriter(outFile)));
+      } catch (Exception e) {
+        e.printStackTrace();
+        return;
+      }
+      outFile = new File(outDir + "/" + patternName + ".subanalysis.attributes.txt"); //***subnode.txt
+      try {
+        subnodeWriter = new PrintWriter(new BufferedWriter(
+                                                           new FileWriter(outFile)));
+      } catch (Exception e) {
+        e.printStackTrace();
+        return;
+      }
+      if (patternName.indexOf(".txt") != -1) //Just cover another type of text file
+      {
+        nodeWriter.println(patternName.substring(0, patternName.indexOf(".txt")) + "\tpattern");
+      }
+      else if (patternName.indexOf(".csv") != -1)
+      {
+        nodeWriter.println(patternName.substring(0, patternName.indexOf(".csv")) + "\tpattern");
+      }
+      else
+      {
+        System.out.println("Unexpected file extension for pattern name.");
+      }
+      
+      new File(directory + "/subpatterns").mkdir();
+      CISReader cisread = new CISReader(motifs[i], writer);
+      Set<String> enrichedCIS = cisread.getSignificantMotifs(); //returns a set of significant motifs (based on p-val)
+      
+      //Print node properties
+      for (String cis : enrichedCIS) {
+        nodeWriter.println(cis + "\tMotif"); //for every string in enrichedCIS
+      }
+      
+      //Get enriched gos;
+      File GOfile = new File(directory + "/go/" + patternName + ".go.processed.txt");
+      if (GOfile.exists()) {
+        match_GO_CIS(patternName, GOfile, enrichedCIS);
+      } else {
+        System.out.println("GO File for " + patternName + " not found");
+      }
+      writer.close();
+      writer2.close();
+      nodeWriter.close();
+      subnodeWriter.close();
+    }
+  }
+  
+  private void match_GO_CIS(String patternName, File gofile, Set<String> enrichedCIS) {
+    ResultReader goreader = new ResultReader(gofile, writer);
+    GeneDescriptorMap<GO> gdMap = goreader.parseGOResults(); //list of GOs (id+desc) then term
+    Set<GO> GOs = gdMap.getGeneDescriptors(); //get keyset (each key maps to one value, keys are unique)
+    
+    //Print node properties
+    if (nodeWriter != null) {
+      for (GO sigGO : GOs) {
+        nodeWriter.println(sigGO.getDescription() + "\tGO");
+      }
+    }
+    
+    //Get all AGIs in pattern
+    Set<AGI> patternAGIs = new HashSet<AGI>();
+    Set<String> GOMotifs = new HashSet<String>();
+    Set<String> subNodeValues = new HashSet<String>();
+    try {
+      BufferedReader reader = new BufferedReader(new FileReader(patternDir + "/" + patternName));
+      String nextLine = "";
+      while ((nextLine = reader.readLine()) != null) {
+        try {
+          patternAGIs.add(AGI.createAGI(nextLine.trim()));
+        } catch (IllegalArgumentException e) {
+        }
+      }
+    } catch (Exception e) {
+      System.out.println(patternName);
+      e.printStackTrace();
+      return;
+    }
+    for (GO nextGO : GOs) {
+      Set<AGI> queryList = gdMap.getAGIs(nextGO); //get go term for go key (gdMap: key list of GOs)
+      MotifReader allMReader = null;
+      
+      PrintWriter subwriter = null;
+      File outFile1 = new File(directory + "/subpatterns/" + nextGO.getId().replaceAll(":", "") + ".txt");
+      try {
+        subwriter = new PrintWriter(new BufferedWriter(
+                                                       new FileWriter(outFile1)));
+      } catch (Exception e) {
+        e.printStackTrace();
+        return;
+      }
+      subwriter.println(nextGO.getId() + "\t" + nextGO.getDescription());
+      
+      try {
+        allMReader = new MotifReader(MotifFileLocator.getInstance().getInputStream());
+      } catch (Exception e) {
+        e.printStackTrace();
+        return;
+      }
+      while (allMReader.nextLine()) //false if EOF, also parses line and sets up nextMotif/Element
+      {
+        String nextMotif = allMReader.getMotif();
+        String nextElement = allMReader.getElement();
+        String key = nextGO.getId() + nextMotif;
+        double pval;
+        if (GOCISEnrich.containsKey(key)) //GOCISEnrich is a Hash map
+        {
+          pval = GOCISEnrich.get(key);
+        }
+        else {
+          pval = pt.parseLine(nextGO.getDescription(), nextMotif, nextElement, queryList, subwriter);
+          GOCISEnrich.put(key, pval); //???
+        }
+        if (pval < P_VAL_THRESHOLD) { //p-val mod //if it's significant print it
+          writer2.println(nextGO.getDescription()
+                            + "\t" + nextElement
+                            + "\t" + String.valueOf(Math.log10(pval)));
+          subNodeValues.add(nextGO.getDescription() + "\tGO");
+          subNodeValues.add(nextElement + "\tMotif");
+          Set<String> TFF_names = binding_site_read.get(nextElement);
+          Set<AGI> all_agis = null;
+          if (TFF_names != null)  //if are binding sites
+          {
+            all_agis = new HashSet<AGI>(); //create a new set
+            for (String tff : TFF_names) //and for each binding site+set of TFs names
+            {
+              Set<AGI> nextFamilies = families_read.get(tff);
+              if (nextFamilies != null)
+              {
+                all_agis.addAll(nextFamilies);
+              }
+            }
+          }
+//     look in families_summary for associated AGI_IDs
+          if (all_agis != null) {
+            for (AGI nextAGI : all_agis) {
+// if AGI is in GO category     //mod so that it searches the entire gene list instead of just the GO category
+              if (patternAGIs.contains(nextAGI)) //og: (queryList.contains(nextAGI)
+              {
+                GOMotifs.add(nextAGI.getId() + "\t" + nextElement);
+                subNodeValues.add(nextAGI.getId() + "\tTranscription Factor");
+              }
+            }
+          }
+          else {
+            if (TFF_names != null) {
+              for (String tff : TFF_names) {
+                if (!tff.equals("NA")) {
+                  System.out.println(tff + " not in families_summary");
+                }
+              }
+            }
+          }
+          if ((enrichedCIS != null) && (enrichedCIS.contains(nextElement))) {
+            //Motif is significant in both pattern and subpattern
+            writer.println(nextGO.getDescription()
+                             + "\t" + nextElement
+                             + "\t" + String.valueOf(Math.log10(pval)));
+          }
+        }
+      }
+      subwriter.close();
+    }
+    MotifReader allMReader = null;
+    try {
+      allMReader = new MotifReader(MotifFileLocator.getInstance().getInputStream());
+    } catch (Exception e) {
+      e.printStackTrace();
+      return;
+    }
+    while (allMReader.nextLine()) {
+      String nextElement = allMReader.getElement();
+//   look in binding_sites for associated TFF
+      Set<String> TFF_names = binding_site_read.get(nextElement);
+      Set<AGI> all_agis = null;
+      if (TFF_names != null) {
+        all_agis = new HashSet<AGI>();
+        for (String tff : TFF_names) {
+          Set<AGI> nextFamilies = families_read.get(tff.toUpperCase());
+          if (nextFamilies != null) {
+            all_agis.addAll(nextFamilies);
+          }
+        }
+      }
+//   look in families_summary for associated AGI_IDs
+      if (all_agis != null) {
+        for (AGI nextAGI : all_agis) {
+//     if motif is significant in the pattern and the pattern contains the AGI
+          if ((enrichedCIS != null) && (enrichedCIS.contains(nextElement))) {
+            if (patternAGIs.contains(nextAGI)) {
+              writer.println(nextAGI.getId() + "\t" + nextElement);
+              nodeWriter.println(nextAGI.getId() + "\tTranscription Factor");
+            }
+          }
+        }
+      }
+      else {
+        if (TFF_names != null) {
+          for (String tff : TFF_names) {
+            if (!tff.equals("NA")) {
+              System.out.println(tff + " not in families_summary");
+            }
+          }
+        }
+      }
+    }
+    for (String line : GOMotifs) {
+      writer2.println(line);
+    }
+    for (String line : subNodeValues) {
+      subnodeWriter.println(line);
+    }
+    return;
+  }
+}
