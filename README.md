@@ -5,19 +5,12 @@ Seq Enrich (August 2016, previously Chip Enrich)
 ----------------
 | INSTRUCTIONS |
 ----------------
-For detailled instructions on how to use Seq Enrich please refer to the INSTRUCTIONS.pdf 
-file included in the .jar file.
+To run SeqEnrich:
+$java -jar /path/to/SeqEnrich.jar
 
-To extract this file open a terminal window (or a command line on Windows), move to the .jar file directory and run this command (case sensitive):
+Select which plant you want to use, add any custom files you want to use, then click start to select your query files.
 
-$jar xf se_2016_08_23.jar INSTRUCTIONS.pdf
-
-This will extract INSTRUCTIONS.pdf from the .jar file and place it in your current 
-working directory.
-
-If this does not work for you, the location of jar might not be in your path environment 
-variable or jar might not be installed. There are plenty of ressources online for these 
-issues.
+For more information, consult http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0178256
 
 -----------------------
 | CONTACT INFORMATION |
